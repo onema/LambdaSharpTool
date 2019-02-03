@@ -797,12 +797,16 @@ namespace LambdaSharp.Tool.Cli.Build {
                 // determine the function project
                 project = project ?? new [] {
                     Path.Combine(Settings.WorkingDirectory, folderName, $"{folderName}.csproj"),
-                    Path.Combine(Settings.WorkingDirectory, folderName, "index.js")
+                    Path.Combine(Settings.WorkingDirectory, folderName, "index.js"),
+                    Path.Combine(Settings.WorkingDirectory, folderName, "build.sbt")
                 }.FirstOrDefault(path => File.Exists(path));
             } else if(Path.GetExtension(project) == ".csproj") {
                 project = Path.Combine(Settings.WorkingDirectory, project);
             } else if(Path.GetExtension(project) == ".js") {
                 project = Path.Combine(Settings.WorkingDirectory, project);
+            } else if (Path.GetExtension(project) == ".sbt") {
+                Path.Combine(Settings.WorkingDirectory, project);
+                
             } else if(Directory.Exists(Path.Combine(Settings.WorkingDirectory, project))) {
 
                 // determine the function project
@@ -821,6 +825,9 @@ namespace LambdaSharp.Tool.Cli.Build {
                 break;
             case ".js":
                 DetermineJavascriptFunctionProperties(functionName, project, ref language, ref runtime, ref handler);
+                break;
+            case ".sbt":
+                DetermineScalaFunctionProperties(functionName, project, ref language, ref runtime, ref handler);
                 break;
             default:
                 AddError("could not determine the function language");
@@ -892,6 +899,19 @@ namespace LambdaSharp.Tool.Cli.Build {
             language = "javascript";
             runtime = runtime ?? "nodejs8.10";
             handler = handler ?? "index.handler";
+        }
+        
+        private void DetermineScalaFunctionProperties(
+            string functionName,
+            string project,
+            ref string language,
+            ref string runtime,
+            ref string handler
+        ) {
+        
+            language = "scala";
+            runtime = runtime ?? "java8";
+            handler = handler ?? throw new ArgumentException("The handler name is required for Scala/Java functions");
         }
 
         private IList<string> ConvertScope(object scope) {

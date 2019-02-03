@@ -145,6 +145,17 @@ namespace LambdaSharp.Tool.Cli.Build {
                     buildConfiguration
                 );
                 break;
+            case ".sbt":
+                ProcessSbt(
+                    function,
+                    noCompile,
+                    noAssemblyValidation,
+                    gitSha,
+                    gitBranch,
+                    buildConfiguration
+                );
+                break;
+                
             default:
                 AddError("could not determine the function language");
                 return;
@@ -287,18 +298,25 @@ namespace LambdaSharp.Tool.Cli.Build {
             );
         }
 
-        private bool ZipWithTool(string zipArchivePath, string zipFolder) {
+        private bool ZipWithTool(string zipArchivePath, string zipLocation, bool isFolder = true) {
             var zipTool = ProcessLauncher.ZipExe;
+            var extension = Path.GetExtension(zipLocation);
             if(string.IsNullOrEmpty(zipTool)) {
                 AddError("failed to find the \"zip\" utility program in path. This program is required to maintain Linux file permissions in the zip archive.");
                 return false;
             }
-            return ProcessLauncher.Execute(
-                zipTool,
-                new[] { "-r", zipArchivePath, "." },
-                zipFolder,
-                Settings.VerboseLevel >= VerboseLevel.Detailed
-            );
+            if(extension != ".jar") {
+                return ProcessLauncher.Execute(
+                    zipTool,
+                    new[] { "-r", zipArchivePath, "." },
+                    zipLocation,
+                    Settings.VerboseLevel >= VerboseLevel.Detailed
+                );
+            }
+            
+            // the package is a jar, no need to zip it
+            File.Move(zipLocation, zipArchivePath);
+            return true;
         }
 
         private bool UnzipWithTool(string zipArchivePath, string unzipFolder) {
@@ -330,20 +348,59 @@ namespace LambdaSharp.Tool.Cli.Build {
             var package = CreatePackage(function.Name, gitSha, gitBranch, Path.GetDirectoryName(function.Project));
             _builder.AddAsset($"{function.FullName}::PackageName", package);
         }
+        
+        private void ProcessSbt(
+            FunctionItem function,
+            bool skipCompile,
+            bool noAssemblyValidation,
+            string gitSha,
+            string gitBranch,
+            string buildConfiguration
+        ) {
+            function.Language = "scala";
+            var projectDirectory = Path.GetDirectoryName(function.Project);
 
-        private string CreatePackage(string functionName, string gitSha, string gitBranch, string folder) {
+            // compile function and create assembly
+            if (!skipCompile) {
+                ProcessLauncher.Execute(
+                    "sbt",
+                    new[] { "assembly" },
+                   projectDirectory, 
+                    false
+                );
+            }
+
+            // check if we need a default handler
+            if (function.Function.Handler == null) {
+                throw new Exception("The function handler cannot be empty for SBT/Scala functions.");
+            }
+            
+            // check if we need to set a default runtime
+            function.Function.Runtime = "java8";
+
+            // check if the project zip file was created
+            var scalaOutputJar = Path.Combine(projectDirectory, "target/scala-2.12/",  "app.jar");
+
+            // decompress project zip into temporary folder so we can add the `GITSHAFILE` files
+            var package = CreatePackage(function.Name, gitSha, gitBranch, scalaOutputJar);
+            _builder.AddAsset($"{function.FullName}::PackageName", package);
+        }
+
+        private string CreatePackage(string functionName, string gitSha, string gitBranch, string location) {
             string package;
-
+            var isFolder = File.GetAttributes(location).HasFlag(FileAttributes.Directory);
+            
             // add `git-info.json` if git sha or git branch is supplied
             if((gitSha != null) || (gitBranch != null)) {
-                File.WriteAllText(Path.Combine(folder, GIT_INFO_FILE), JObject.FromObject(new ModuleManifestGitInfo {
+                File.WriteAllText(Path.Combine(location, GIT_INFO_FILE), JObject.FromObject(new ModuleManifestGitInfo {
                     SHA = gitSha,
                     Branch = gitBranch
                 }).ToString(Formatting.None));
             }
 
             // compress temp folder into new package
-            var zipTempPackage = Path.GetTempFileName() + ".zip";
+            var packageExtension = Path.GetExtension(location) == ".jar" ? ".jar" : ".zip";
+            var zipTempPackage = Path.GetTempFileName() + packageExtension;
             if(File.Exists(zipTempPackage)) {
                 File.Delete(zipTempPackage);
             }
@@ -352,10 +409,14 @@ namespace LambdaSharp.Tool.Cli.Build {
             var files = new List<string>();
             using(var md5 = MD5.Create()) {
                 var bytes = new List<byte>();
-                files.AddRange(Directory.GetFiles(folder, "*", SearchOption.AllDirectories));
+                if(isFolder) {
+                    files.AddRange(Directory.GetFiles(location, "*", SearchOption.AllDirectories));
+                } else {
+                    files.Add(location);
+                }
                 files.Sort();
                 foreach(var file in files) {
-                    var relativeFilePath = Path.GetRelativePath(folder, file);
+                    var relativeFilePath = Path.GetRelativePath(location, file);
                     var filename = Path.GetFileName(file);
 
                     // don't include the `git-info.json` since it changes with every build
@@ -370,26 +431,26 @@ namespace LambdaSharp.Tool.Cli.Build {
                         }
                     }
                 }
-                package = Path.Combine(Settings.OutputDirectory, $"function_{functionName}_{md5.ComputeHash(bytes.ToArray()).ToHexString()}.zip");
+                package = Path.Combine(Settings.OutputDirectory, $"function_{functionName}_{md5.ComputeHash(bytes.ToArray()).ToHexString()}{packageExtension}");
             }
 
             // compress folder contents
             if(RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) {
                 using(var zipArchive = ZipFile.Open(zipTempPackage, ZipArchiveMode.Create)) {
                     foreach(var file in files) {
-                        var filename = Path.GetRelativePath(folder, file);
+                        var filename = Path.GetRelativePath(location, file);
                         zipArchive.CreateEntryFromFile(file, filename);
                     }
                 }
             } else {
-                if(!ZipWithTool(zipTempPackage, folder)) {
+                if(!ZipWithTool(zipTempPackage, location, isFolder)) {
                     AddError("`zip` command failed");
                     return null;
                 }
             }
             if((gitSha != null) || (gitBranch != null)) {
                 try {
-                    File.Delete(Path.Combine(folder, GIT_INFO_FILE));
+                    File.Delete(Path.Combine(location, GIT_INFO_FILE));
                 } catch { }
             }
             if(!Directory.Exists(Settings.OutputDirectory)) {
