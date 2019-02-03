@@ -1,0 +1,18 @@
+Module: Test.TestModule
+Description: LambdaSharp CloudFormation Test
+Items:
+
+  - Using: OtherModule
+    Module: Some.OtherModule
+    Description: Cross-Module References
+    Items:
+
+      - Import: Value
+        Description: cross-module import reference
+        Scope: "*"
+
+  - Function: Function
+    Description: My function
+    Memory: 128
+    Timeout: 30
+

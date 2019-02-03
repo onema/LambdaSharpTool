@@ -1,0 +1,803 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "A sample module using Kinesis streams (v1.0-DEV)",
+  "Parameters": {
+    "Secrets": {
+      "Type": "String",
+      "Description": "Secret Keys (ARNs)",
+      "Default": ""
+    },
+    "LambdaSharpDeadLetterQueue": {
+      "Type": "String",
+      "Description": "Dead Letter Queue (ARN)",
+      "AllowedPattern": "^.+$",
+      "ConstraintDescription": "must either be a cross-module import reference or a non-empty value",
+      "Default": "$LambdaSharp-Core::DeadLetterQueue"
+    },
+    "LambdaSharpLoggingStream": {
+      "Type": "String",
+      "Description": "Logging Stream (ARN)",
+      "AllowedPattern": "^.+$",
+      "ConstraintDescription": "must either be a cross-module import reference or a non-empty value",
+      "Default": "$LambdaSharp-Core::LoggingStream"
+    },
+    "LambdaSharpLoggingStreamRole": {
+      "Type": "String",
+      "Description": "Logging Stream Role (ARN)",
+      "AllowedPattern": "^.+$",
+      "ConstraintDescription": "must either be a cross-module import reference or a non-empty value",
+      "Default": "$LambdaSharp-Core::LoggingStreamRole"
+    },
+    "LambdaSharpDefaultSecretKey": {
+      "Type": "String",
+      "Description": "Secret Key (ARN)",
+      "AllowedPattern": "^.+$",
+      "ConstraintDescription": "must either be a cross-module import reference or a non-empty value",
+      "Default": "$LambdaSharp-Core::DefaultSecretKey"
+    },
+    "DeploymentBucketName": {
+      "Type": "String",
+      "Description": "Deployment S3 Bucket Name"
+    },
+    "DeploymentPrefix": {
+      "Type": "String",
+      "Description": "Deployment Tier Prefix"
+    },
+    "DeploymentPrefixLowercase": {
+      "Type": "String",
+      "Description": "Deployment Tier Prefix (lowercase)"
+    },
+    "DeploymentParent": {
+      "Type": "String",
+      "Description": "Parent Stack Name",
+      "Default": ""
+    },
+    "DeploymentChecksum": {
+      "Type": "String",
+      "Description": "Deployment Checksum",
+      "Default": "E92F61D37CE93D8E2BF7343CBE19A7B1"
+    }
+  },
+  "Resources": {
+    "Stream": {
+      "Type": "AWS::Kinesis::Stream",
+      "Properties": {
+        "ShardCount": "1"
+      }
+    },
+    "MyFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {
+            "Ref": "DeploymentBucketName"
+          },
+          "S3Key": "LambdaSharp/Modules/Sample.Kinesis/Assets/MyFunction-DRYRUN.zip"
+        },
+        "DeadLetterConfig": {
+          "TargetArn": {
+            "Fn::If": [
+              "LambdaSharpDeadLetterQueueIsImported",
+              {
+                "Fn::ImportValue": {
+                  "Fn::Sub": [
+                    "${DeploymentPrefix}${Import}",
+                    {
+                      "Import": {
+                        "Fn::Select": [
+                          "1",
+                          {
+                            "Fn::Split": [
+                              "$",
+                              {
+                                "Ref": "LambdaSharpDeadLetterQueue"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "Ref": "LambdaSharpDeadLetterQueue"
+              }
+            ]
+          }
+        },
+        "Description": "This function is invoked by a Kinesis stream (v1.0-DEV)",
+        "Environment": {
+          "Variables": {
+            "MODULE_ID": {
+              "Ref": "AWS::StackName"
+            },
+            "MODULE_INFO": "LambdaSharp.Sample.Kinesis:1.0-DEV",
+            "LAMBDA_NAME": "MyFunction",
+            "LAMBDA_RUNTIME": "dotnetcore2.1",
+            "DEADLETTERQUEUE": {
+              "Fn::If": [
+                "LambdaSharpDeadLetterQueueIsImported",
+                {
+                  "Fn::ImportValue": {
+                    "Fn::Sub": [
+                      "${DeploymentPrefix}${Import}",
+                      {
+                        "Import": {
+                          "Fn::Select": [
+                            "1",
+                            {
+                              "Fn::Split": [
+                                "$",
+                                {
+                                  "Ref": "LambdaSharpDeadLetterQueue"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "Ref": "LambdaSharpDeadLetterQueue"
+                }
+              ]
+            },
+            "DEFAULTSECRETKEY": {
+              "Fn::If": [
+                "LambdaSharpDefaultSecretKeyIsImported",
+                {
+                  "Fn::ImportValue": {
+                    "Fn::Sub": [
+                      "${DeploymentPrefix}${Import}",
+                      {
+                        "Import": {
+                          "Fn::Select": [
+                            "1",
+                            {
+                              "Fn::Split": [
+                                "$",
+                                {
+                                  "Ref": "LambdaSharpDefaultSecretKey"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "Ref": "LambdaSharpDefaultSecretKey"
+                }
+              ]
+            }
+          }
+        },
+        "Handler": "MyFunction::KinesisSample.MyFunction.Function::FunctionHandlerAsync",
+        "MemorySize": "128",
+        "Role": {
+          "Fn::GetAtt": [
+            "ModuleRole",
+            "Arn"
+          ]
+        },
+        "Runtime": "dotnetcore2.1",
+        "Timeout": "15"
+      }
+    },
+    "MyFunctionLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/${MyFunction}"
+        },
+        "RetentionInDays": 30
+      }
+    },
+    "ModuleRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "ModuleLambdaPrincipal",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "Stream",
+                  "Effect": "Allow",
+                  "Action": [
+                    "kinesis:DescribeStream",
+                    "kinesis:GetRecords",
+                    "kinesis:GetShardIterator"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "Stream",
+                      "Arn"
+                    ]
+                  }
+                },
+                {
+                  "Sid": "ModuleDeadLetterQueueLogging",
+                  "Effect": "Allow",
+                  "Action": [
+                    "sqs:SendMessage"
+                  ],
+                  "Resource": {
+                    "Fn::If": [
+                      "LambdaSharpDeadLetterQueueIsImported",
+                      {
+                        "Fn::ImportValue": {
+                          "Fn::Sub": [
+                            "${DeploymentPrefix}${Import}",
+                            {
+                              "Import": {
+                                "Fn::Select": [
+                                  "1",
+                                  {
+                                    "Fn::Split": [
+                                      "$",
+                                      {
+                                        "Ref": "LambdaSharpDeadLetterQueue"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "Ref": "LambdaSharpDeadLetterQueue"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "Sid": "SecretsDecryption",
+                  "Effect": "Allow",
+                  "Action": [
+                    "kms:Decrypt",
+                    "kms:Encrypt",
+                    "kms:GenerateDataKey",
+                    "kms:GenerateDataKeyWithoutPlaintext"
+                  ],
+                  "Resource": {
+                    "Fn::Split": [
+                      ",",
+                      {
+                        "Fn::If": [
+                          "SecretsIsEmpty",
+                          {
+                            "Fn::If": [
+                              "LambdaSharpDefaultSecretKeyIsImported",
+                              {
+                                "Fn::ImportValue": {
+                                  "Fn::Sub": [
+                                    "${DeploymentPrefix}${Import}",
+                                    {
+                                      "Import": {
+                                        "Fn::Select": [
+                                          "1",
+                                          {
+                                            "Fn::Split": [
+                                              "$",
+                                              {
+                                                "Ref": "LambdaSharpDefaultSecretKey"
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "Ref": "LambdaSharpDefaultSecretKey"
+                              }
+                            ]
+                          },
+                          {
+                            "Fn::Join": [
+                              ",",
+                              [
+                                {
+                                  "Fn::If": [
+                                    "LambdaSharpDefaultSecretKeyIsImported",
+                                    {
+                                      "Fn::ImportValue": {
+                                        "Fn::Sub": [
+                                          "${DeploymentPrefix}${Import}",
+                                          {
+                                            "Import": {
+                                              "Fn::Select": [
+                                                "1",
+                                                {
+                                                  "Fn::Split": [
+                                                    "$",
+                                                    {
+                                                      "Ref": "LambdaSharpDefaultSecretKey"
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "Ref": "LambdaSharpDefaultSecretKey"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "Ref": "Secrets"
+                                }
+                              ]
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "Sid": "ModuleLogStreamAccess",
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": "arn:aws:logs:*:*:*"
+                }
+              ]
+            },
+            "PolicyName": {
+              "Fn::Sub": "${AWS::StackName}ModulePolicy"
+            }
+          }
+        ]
+      }
+    },
+    "ModuleRegistration": {
+      "Type": "Custom::LambdaSharpRegistrationModule",
+      "Properties": {
+        "ServiceToken": {
+          "Fn::ImportValue": {
+            "Fn::Sub": "${DeploymentPrefix}LambdaSharp::Registration::Module"
+          }
+        },
+        "ResourceType": "LambdaSharp::Registration::Module",
+        "Module": "LambdaSharp.Sample.Kinesis:1.0-DEV",
+        "ModuleId": {
+          "Ref": "AWS::StackName"
+        }
+      }
+    },
+    "MyFunctionRegistration": {
+      "Type": "Custom::LambdaSharpRegistrationFunction",
+      "Properties": {
+        "ServiceToken": {
+          "Fn::ImportValue": {
+            "Fn::Sub": "${DeploymentPrefix}LambdaSharp::Registration::Function"
+          }
+        },
+        "ResourceType": "LambdaSharp::Registration::Function",
+        "ModuleId": {
+          "Ref": "AWS::StackName"
+        },
+        "FunctionId": {
+          "Ref": "MyFunction"
+        },
+        "FunctionName": "MyFunction",
+        "FunctionLogGroupName": {
+          "Fn::Sub": "/aws/lambda/${MyFunction}"
+        },
+        "FunctionPlatform": "AWS Lambda",
+        "FunctionFramework": "dotnetcore2.1",
+        "FunctionLanguage": "csharp",
+        "FunctionMaxMemory": "128",
+        "FunctionMaxDuration": "15"
+      },
+      "DependsOn": [
+        "ModuleRegistration"
+      ]
+    },
+    "MyFunctionLogGroupSubscription": {
+      "Type": "AWS::Logs::SubscriptionFilter",
+      "Properties": {
+        "DestinationArn": {
+          "Fn::If": [
+            "LambdaSharpLoggingStreamIsImported",
+            {
+              "Fn::ImportValue": {
+                "Fn::Sub": [
+                  "${DeploymentPrefix}${Import}",
+                  {
+                    "Import": {
+                      "Fn::Select": [
+                        "1",
+                        {
+                          "Fn::Split": [
+                            "$",
+                            {
+                              "Ref": "LambdaSharpLoggingStream"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "Ref": "LambdaSharpLoggingStream"
+            }
+          ]
+        },
+        "FilterPattern": "-\"*** \"",
+        "LogGroupName": {
+          "Ref": "MyFunctionLogGroup"
+        },
+        "RoleArn": {
+          "Fn::If": [
+            "LambdaSharpLoggingStreamRoleIsImported",
+            {
+              "Fn::ImportValue": {
+                "Fn::Sub": [
+                  "${DeploymentPrefix}${Import}",
+                  {
+                    "Import": {
+                      "Fn::Select": [
+                        "1",
+                        {
+                          "Fn::Split": [
+                            "$",
+                            {
+                              "Ref": "LambdaSharpLoggingStreamRole"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "Ref": "LambdaSharpLoggingStreamRole"
+            }
+          ]
+        }
+      }
+    },
+    "MyFunctionSource1EventMapping": {
+      "Type": "AWS::Lambda::EventSourceMapping",
+      "Properties": {
+        "BatchSize": 15,
+        "Enabled": true,
+        "EventSourceArn": {
+          "Fn::GetAtt": [
+            "Stream",
+            "Arn"
+          ]
+        },
+        "FunctionName": {
+          "Ref": "MyFunction"
+        },
+        "StartingPosition": "LATEST"
+      }
+    }
+  },
+  "Outputs": {
+    "Module": {
+      "Value": "LambdaSharp.Sample.Kinesis:1.0-DEV"
+    }
+  },
+  "Conditions": {
+    "SecretsIsEmpty": {
+      "Fn::Equals": [
+        {
+          "Ref": "Secrets"
+        },
+        ""
+      ]
+    },
+    "LambdaSharpDeadLetterQueueIsImported": {
+      "Fn::And": [
+        {
+          "Fn::Not": [
+            {
+              "Fn::Equals": [
+                {
+                  "Ref": "LambdaSharpDeadLetterQueue"
+                },
+                ""
+              ]
+            }
+          ]
+        },
+        {
+          "Fn::Equals": [
+            {
+              "Fn::Select": [
+                "0",
+                {
+                  "Fn::Split": [
+                    "$",
+                    {
+                      "Ref": "LambdaSharpDeadLetterQueue"
+                    }
+                  ]
+                }
+              ]
+            },
+            ""
+          ]
+        }
+      ]
+    },
+    "LambdaSharpLoggingStreamIsImported": {
+      "Fn::And": [
+        {
+          "Fn::Not": [
+            {
+              "Fn::Equals": [
+                {
+                  "Ref": "LambdaSharpLoggingStream"
+                },
+                ""
+              ]
+            }
+          ]
+        },
+        {
+          "Fn::Equals": [
+            {
+              "Fn::Select": [
+                "0",
+                {
+                  "Fn::Split": [
+                    "$",
+                    {
+                      "Ref": "LambdaSharpLoggingStream"
+                    }
+                  ]
+                }
+              ]
+            },
+            ""
+          ]
+        }
+      ]
+    },
+    "LambdaSharpLoggingStreamRoleIsImported": {
+      "Fn::And": [
+        {
+          "Fn::Not": [
+            {
+              "Fn::Equals": [
+                {
+                  "Ref": "LambdaSharpLoggingStreamRole"
+                },
+                ""
+              ]
+            }
+          ]
+        },
+        {
+          "Fn::Equals": [
+            {
+              "Fn::Select": [
+                "0",
+                {
+                  "Fn::Split": [
+                    "$",
+                    {
+                      "Ref": "LambdaSharpLoggingStreamRole"
+                    }
+                  ]
+                }
+              ]
+            },
+            ""
+          ]
+        }
+      ]
+    },
+    "LambdaSharpDefaultSecretKeyIsImported": {
+      "Fn::And": [
+        {
+          "Fn::Not": [
+            {
+              "Fn::Equals": [
+                {
+                  "Ref": "LambdaSharpDefaultSecretKey"
+                },
+                ""
+              ]
+            }
+          ]
+        },
+        {
+          "Fn::Equals": [
+            {
+              "Fn::Select": [
+                "0",
+                {
+                  "Fn::Split": [
+                    "$",
+                    {
+                      "Ref": "LambdaSharpDefaultSecretKey"
+                    }
+                  ]
+                }
+              ]
+            },
+            ""
+          ]
+        }
+      ]
+    }
+  },
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterLabels": {
+        "Secrets": {
+          "default": "Comma-separated list of optional secret keys [String]"
+        },
+        "LambdaSharpDeadLetterQueue": {
+          "default": "Dead Letter Queue (ARN) [String]"
+        },
+        "LambdaSharpLoggingStream": {
+          "default": "Logging Stream (ARN) [String]"
+        },
+        "LambdaSharpLoggingStreamRole": {
+          "default": "Logging Stream Role (ARN) [String]"
+        },
+        "LambdaSharpDefaultSecretKey": {
+          "default": "Secret Key (ARN) [String]"
+        },
+        "DeploymentBucketName": {
+          "default": "Deployment S3 bucket name [String]"
+        },
+        "DeploymentPrefix": {
+          "default": "Deployment tier prefix [String]"
+        },
+        "DeploymentPrefixLowercase": {
+          "default": "Deployment tier prefix (lowercase) [String]"
+        },
+        "DeploymentParent": {
+          "default": "Parent stack name for nested deployments, blank otherwise [String]"
+        },
+        "DeploymentChecksum": {
+          "default": "CloudFormation template MD5 checksum [String]"
+        }
+      },
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "LambdaSharp Module Options"
+          },
+          "Parameters": [
+            "Secrets"
+          ]
+        },
+        {
+          "Label": {
+            "default": "LambdaSharp Core Imports"
+          },
+          "Parameters": [
+            "LambdaSharpDeadLetterQueue",
+            "LambdaSharpLoggingStream",
+            "LambdaSharpLoggingStreamRole",
+            "LambdaSharpDefaultSecretKey"
+          ]
+        },
+        {
+          "Label": {
+            "default": "LambdaSharp Deployment Settings (DO NOT MODIFY)"
+          },
+          "Parameters": [
+            "DeploymentBucketName",
+            "DeploymentPrefix",
+            "DeploymentPrefixLowercase",
+            "DeploymentParent",
+            "DeploymentChecksum"
+          ]
+        }
+      ]
+    },
+    "LambdaSharp::Manifest": {
+      "Version": "2018-12-31",
+      "Module": "LambdaSharp.Sample.Kinesis:1.0-DEV",
+      "ParameterSections": [
+        {
+          "Title": "LambdaSharp Module Options",
+          "Parameters": [
+            {
+              "Name": "Secrets",
+              "Type": "String",
+              "Label": "Comma-separated list of optional secret keys",
+              "Default": ""
+            }
+          ]
+        },
+        {
+          "Title": "LambdaSharp Core Imports",
+          "Parameters": [
+            {
+              "Name": "DeadLetterQueue",
+              "Type": "String",
+              "Label": "Dead Letter Queue (ARN)",
+              "Default": "$LambdaSharp-Core::DeadLetterQueue"
+            },
+            {
+              "Name": "LoggingStream",
+              "Type": "String",
+              "Label": "Logging Stream (ARN)",
+              "Default": "$LambdaSharp-Core::LoggingStream"
+            },
+            {
+              "Name": "LoggingStreamRole",
+              "Type": "String",
+              "Label": "Logging Stream Role (ARN)",
+              "Default": "$LambdaSharp-Core::LoggingStreamRole"
+            },
+            {
+              "Name": "DefaultSecretKey",
+              "Type": "String",
+              "Label": "Secret Key (ARN)",
+              "Default": "$LambdaSharp-Core::DefaultSecretKey"
+            }
+          ]
+        }
+      ],
+      "RuntimeCheck": true,
+      "Hash": "E92F61D37CE93D8E2BF7343CBE19A7B1",
+      "Git": {
+        "Branch": "test-branch",
+        "SHA": "0123456789ABCDEF0123456789ABCDEF01234567"
+      },
+      "Dependencies": [
+        {
+          "ModuleFullName": "LambdaSharp.Core",
+          "MinVersion": "0.5-RC1"
+        }
+      ],
+      "ResourceNameMappings": {
+        "MyFunctionLogGroup": "MyFunction::LogGroup",
+        "ModuleRole": "Module::Role",
+        "ModuleRegistration": "Module::Registration",
+        "MyFunctionRegistration": "MyFunction::Registration",
+        "MyFunctionLogGroupSubscription": "MyFunction::LogGroupSubscription",
+        "MyFunctionSource1EventMapping": "MyFunction::Source1EventMapping"
+      },
+      "TypeNameMappings": {
+        "Custom::LambdaSharpRegistrationModule": "LambdaSharp::Registration::Module",
+        "Custom::LambdaSharpRegistrationFunction": "LambdaSharp::Registration::Function"
+      }
+    }
+  }
+}

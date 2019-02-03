@@ -1,0 +1,976 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "A sample module integrating with Slack (v1.0-DEV)",
+  "Parameters": {
+    "SlackToken": {
+      "Type": "String",
+      "Description": "Slack verification token",
+      "Default": ""
+    },
+    "Secrets": {
+      "Type": "String",
+      "Description": "Secret Keys (ARNs)",
+      "Default": ""
+    },
+    "LambdaSharpDeadLetterQueue": {
+      "Type": "String",
+      "Description": "Dead Letter Queue (ARN)",
+      "AllowedPattern": "^.+$",
+      "ConstraintDescription": "must either be a cross-module import reference or a non-empty value",
+      "Default": "$LambdaSharp-Core::DeadLetterQueue"
+    },
+    "LambdaSharpLoggingStream": {
+      "Type": "String",
+      "Description": "Logging Stream (ARN)",
+      "AllowedPattern": "^.+$",
+      "ConstraintDescription": "must either be a cross-module import reference or a non-empty value",
+      "Default": "$LambdaSharp-Core::LoggingStream"
+    },
+    "LambdaSharpLoggingStreamRole": {
+      "Type": "String",
+      "Description": "Logging Stream Role (ARN)",
+      "AllowedPattern": "^.+$",
+      "ConstraintDescription": "must either be a cross-module import reference or a non-empty value",
+      "Default": "$LambdaSharp-Core::LoggingStreamRole"
+    },
+    "LambdaSharpDefaultSecretKey": {
+      "Type": "String",
+      "Description": "Secret Key (ARN)",
+      "AllowedPattern": "^.+$",
+      "ConstraintDescription": "must either be a cross-module import reference or a non-empty value",
+      "Default": "$LambdaSharp-Core::DefaultSecretKey"
+    },
+    "DeploymentBucketName": {
+      "Type": "String",
+      "Description": "Deployment S3 Bucket Name"
+    },
+    "DeploymentPrefix": {
+      "Type": "String",
+      "Description": "Deployment Tier Prefix"
+    },
+    "DeploymentPrefixLowercase": {
+      "Type": "String",
+      "Description": "Deployment Tier Prefix (lowercase)"
+    },
+    "DeploymentParent": {
+      "Type": "String",
+      "Description": "Parent Stack Name",
+      "Default": ""
+    },
+    "DeploymentChecksum": {
+      "Type": "String",
+      "Description": "Deployment Checksum",
+      "Default": "3974982913F7704E5DFF0ABC1BCF0086"
+    }
+  },
+  "Resources": {
+    "MyFunction": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {
+            "Ref": "DeploymentBucketName"
+          },
+          "S3Key": "LambdaSharp/Modules/Sample.SlackCommand/Assets/MyFunction-DRYRUN.zip"
+        },
+        "DeadLetterConfig": {
+          "TargetArn": {
+            "Fn::If": [
+              "LambdaSharpDeadLetterQueueIsImported",
+              {
+                "Fn::ImportValue": {
+                  "Fn::Sub": [
+                    "${DeploymentPrefix}${Import}",
+                    {
+                      "Import": {
+                        "Fn::Select": [
+                          "1",
+                          {
+                            "Fn::Split": [
+                              "$",
+                              {
+                                "Ref": "LambdaSharpDeadLetterQueue"
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "Ref": "LambdaSharpDeadLetterQueue"
+              }
+            ]
+          }
+        },
+        "Description": "This function is invoked by a Slack command (v1.0-DEV)",
+        "Environment": {
+          "Variables": {
+            "MODULE_ID": {
+              "Ref": "AWS::StackName"
+            },
+            "MODULE_INFO": "LambdaSharp.Sample.SlackCommand:1.0-DEV",
+            "LAMBDA_NAME": "MyFunction",
+            "LAMBDA_RUNTIME": "dotnetcore2.1",
+            "DEADLETTERQUEUE": {
+              "Fn::If": [
+                "LambdaSharpDeadLetterQueueIsImported",
+                {
+                  "Fn::ImportValue": {
+                    "Fn::Sub": [
+                      "${DeploymentPrefix}${Import}",
+                      {
+                        "Import": {
+                          "Fn::Select": [
+                            "1",
+                            {
+                              "Fn::Split": [
+                                "$",
+                                {
+                                  "Ref": "LambdaSharpDeadLetterQueue"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "Ref": "LambdaSharpDeadLetterQueue"
+                }
+              ]
+            },
+            "DEFAULTSECRETKEY": {
+              "Fn::If": [
+                "LambdaSharpDefaultSecretKeyIsImported",
+                {
+                  "Fn::ImportValue": {
+                    "Fn::Sub": [
+                      "${DeploymentPrefix}${Import}",
+                      {
+                        "Import": {
+                          "Fn::Select": [
+                            "1",
+                            {
+                              "Fn::Split": [
+                                "$",
+                                {
+                                  "Ref": "LambdaSharpDefaultSecretKey"
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "Ref": "LambdaSharpDefaultSecretKey"
+                }
+              ]
+            },
+            "STR_SLACKTOKEN": {
+              "Ref": "SlackToken"
+            }
+          }
+        },
+        "Handler": "MyFunction::SlackCommandSample.MyFunction.Function::FunctionHandlerAsync",
+        "MemorySize": "128",
+        "Role": {
+          "Fn::GetAtt": [
+            "ModuleRole",
+            "Arn"
+          ]
+        },
+        "Runtime": "dotnetcore2.1",
+        "Timeout": "30"
+      }
+    },
+    "MyFunctionLogGroup": {
+      "Type": "AWS::Logs::LogGroup",
+      "Properties": {
+        "LogGroupName": {
+          "Fn::Sub": "/aws/lambda/${MyFunction}"
+        },
+        "RetentionInDays": 30
+      }
+    },
+    "ModuleRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "ModuleLambdaPrincipal",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "ModuleDeadLetterQueueLogging",
+                  "Effect": "Allow",
+                  "Action": [
+                    "sqs:SendMessage"
+                  ],
+                  "Resource": {
+                    "Fn::If": [
+                      "LambdaSharpDeadLetterQueueIsImported",
+                      {
+                        "Fn::ImportValue": {
+                          "Fn::Sub": [
+                            "${DeploymentPrefix}${Import}",
+                            {
+                              "Import": {
+                                "Fn::Select": [
+                                  "1",
+                                  {
+                                    "Fn::Split": [
+                                      "$",
+                                      {
+                                        "Ref": "LambdaSharpDeadLetterQueue"
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            }
+                          ]
+                        }
+                      },
+                      {
+                        "Ref": "LambdaSharpDeadLetterQueue"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "Sid": "SecretsDecryption",
+                  "Effect": "Allow",
+                  "Action": [
+                    "kms:Decrypt",
+                    "kms:Encrypt",
+                    "kms:GenerateDataKey",
+                    "kms:GenerateDataKeyWithoutPlaintext"
+                  ],
+                  "Resource": {
+                    "Fn::Split": [
+                      ",",
+                      {
+                        "Fn::If": [
+                          "SecretsIsEmpty",
+                          {
+                            "Fn::If": [
+                              "LambdaSharpDefaultSecretKeyIsImported",
+                              {
+                                "Fn::ImportValue": {
+                                  "Fn::Sub": [
+                                    "${DeploymentPrefix}${Import}",
+                                    {
+                                      "Import": {
+                                        "Fn::Select": [
+                                          "1",
+                                          {
+                                            "Fn::Split": [
+                                              "$",
+                                              {
+                                                "Ref": "LambdaSharpDefaultSecretKey"
+                                              }
+                                            ]
+                                          }
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              },
+                              {
+                                "Ref": "LambdaSharpDefaultSecretKey"
+                              }
+                            ]
+                          },
+                          {
+                            "Fn::Join": [
+                              ",",
+                              [
+                                {
+                                  "Fn::If": [
+                                    "LambdaSharpDefaultSecretKeyIsImported",
+                                    {
+                                      "Fn::ImportValue": {
+                                        "Fn::Sub": [
+                                          "${DeploymentPrefix}${Import}",
+                                          {
+                                            "Import": {
+                                              "Fn::Select": [
+                                                "1",
+                                                {
+                                                  "Fn::Split": [
+                                                    "$",
+                                                    {
+                                                      "Ref": "LambdaSharpDefaultSecretKey"
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            }
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    {
+                                      "Ref": "LambdaSharpDefaultSecretKey"
+                                    }
+                                  ]
+                                },
+                                {
+                                  "Ref": "Secrets"
+                                }
+                              ]
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                },
+                {
+                  "Sid": "ModuleLogStreamAccess",
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                  ],
+                  "Resource": "arn:aws:logs:*:*:*"
+                }
+              ]
+            },
+            "PolicyName": {
+              "Fn::Sub": "${AWS::StackName}ModulePolicy"
+            }
+          }
+        ]
+      }
+    },
+    "ModuleRegistration": {
+      "Type": "Custom::LambdaSharpRegistrationModule",
+      "Properties": {
+        "ServiceToken": {
+          "Fn::ImportValue": {
+            "Fn::Sub": "${DeploymentPrefix}LambdaSharp::Registration::Module"
+          }
+        },
+        "ResourceType": "LambdaSharp::Registration::Module",
+        "Module": "LambdaSharp.Sample.SlackCommand:1.0-DEV",
+        "ModuleId": {
+          "Ref": "AWS::StackName"
+        }
+      }
+    },
+    "MyFunctionRegistration": {
+      "Type": "Custom::LambdaSharpRegistrationFunction",
+      "Properties": {
+        "ServiceToken": {
+          "Fn::ImportValue": {
+            "Fn::Sub": "${DeploymentPrefix}LambdaSharp::Registration::Function"
+          }
+        },
+        "ResourceType": "LambdaSharp::Registration::Function",
+        "ModuleId": {
+          "Ref": "AWS::StackName"
+        },
+        "FunctionId": {
+          "Ref": "MyFunction"
+        },
+        "FunctionName": "MyFunction",
+        "FunctionLogGroupName": {
+          "Fn::Sub": "/aws/lambda/${MyFunction}"
+        },
+        "FunctionPlatform": "AWS Lambda",
+        "FunctionFramework": "dotnetcore2.1",
+        "FunctionLanguage": "csharp",
+        "FunctionMaxMemory": "128",
+        "FunctionMaxDuration": "30"
+      },
+      "DependsOn": [
+        "ModuleRegistration"
+      ]
+    },
+    "MyFunctionLogGroupSubscription": {
+      "Type": "AWS::Logs::SubscriptionFilter",
+      "Properties": {
+        "DestinationArn": {
+          "Fn::If": [
+            "LambdaSharpLoggingStreamIsImported",
+            {
+              "Fn::ImportValue": {
+                "Fn::Sub": [
+                  "${DeploymentPrefix}${Import}",
+                  {
+                    "Import": {
+                      "Fn::Select": [
+                        "1",
+                        {
+                          "Fn::Split": [
+                            "$",
+                            {
+                              "Ref": "LambdaSharpLoggingStream"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "Ref": "LambdaSharpLoggingStream"
+            }
+          ]
+        },
+        "FilterPattern": "-\"*** \"",
+        "LogGroupName": {
+          "Ref": "MyFunctionLogGroup"
+        },
+        "RoleArn": {
+          "Fn::If": [
+            "LambdaSharpLoggingStreamRoleIsImported",
+            {
+              "Fn::ImportValue": {
+                "Fn::Sub": [
+                  "${DeploymentPrefix}${Import}",
+                  {
+                    "Import": {
+                      "Fn::Select": [
+                        "1",
+                        {
+                          "Fn::Split": [
+                            "$",
+                            {
+                              "Ref": "LambdaSharpLoggingStreamRole"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "Ref": "LambdaSharpLoggingStreamRole"
+            }
+          ]
+        }
+      }
+    },
+    "ModuleRestApi": {
+      "Type": "AWS::ApiGateway::RestApi",
+      "Properties": {
+        "Description": "${Module::FullName} API (v${Module::Version})",
+        "FailOnWarnings": true,
+        "Name": {
+          "Fn::Sub": "${AWS::StackName} Module API"
+        }
+      }
+    },
+    "ModuleRestApiSlackResource": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+        "ParentId": {
+          "Fn::GetAtt": [
+            "ModuleRestApi",
+            "RootResourceId"
+          ]
+        },
+        "PathPart": "slack",
+        "RestApiId": {
+          "Ref": "ModuleRestApi"
+        }
+      }
+    },
+    "ModuleRestApiSlackResourcePOST": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "AuthorizationType": "NONE",
+        "HttpMethod": "POST",
+        "Integration": {
+          "IntegrationHttpMethod": "POST",
+          "IntegrationResponses": [
+            {
+              "ResponseTemplates": {
+                "application/json": "{\r\n\"response_type\": \"in_channel\",\r\n\"text\": \"\"\r\n}"
+              },
+              "StatusCode": 200
+            }
+          ],
+          "RequestParameters": {
+            "integration.request.header.X-Amz-Invocation-Type": "'Event'"
+          },
+          "RequestTemplates": {
+            "application/x-www-form-urlencoded": "{\r\n#foreach($token in $input.path('$').split('&'))\r\n    #set($keyVal = $token.split('='))\r\n    #set($keyValSize = $keyVal.size())\r\n    #if($keyValSize == 2)\r\n        #set($key = $util.escapeJavaScript($util.urlDecode($keyVal[0])))\r\n        #set($val = $util.escapeJavaScript($util.urlDecode($keyVal[1])))\r\n        \"$key\": \"$val\"#if($foreach.hasNext),#end\r\n    #end\r\n#end\r\n}"
+          },
+          "Type": "AWS",
+          "Uri": {
+            "Fn::Sub": "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MyFunction.Arn}/invocations"
+          }
+        },
+        "MethodResponses": [
+          {
+            "ResponseModels": {
+              "application/json": "Empty"
+            },
+            "StatusCode": 200
+          }
+        ],
+        "ResourceId": {
+          "Ref": "ModuleRestApiSlackResource"
+        },
+        "RestApiId": {
+          "Ref": "ModuleRestApi"
+        }
+      }
+    },
+    "ModuleRestApiSlackResourcePOSTPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {
+          "Fn::GetAtt": [
+            "MyFunction",
+            "Arn"
+          ]
+        },
+        "Principal": "apigateway.amazonaws.com",
+        "SourceArn": {
+          "Fn::Sub": "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ModuleRestApi}/LATEST/POST/slack"
+        }
+      }
+    },
+    "ModuleRestApiRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "ModuleRestApiPrincipal",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "apigateway.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "ModuleRestApiLogging",
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:DescribeLogGroups",
+                    "logs:DescribeLogStreams",
+                    "logs:PutLogEvents",
+                    "logs:GetLogEvents",
+                    "logs:FilterLogEvents"
+                  ],
+                  "Resource": "arn:aws:logs:*:*:*"
+                }
+              ]
+            },
+            "PolicyName": {
+              "Fn::Sub": "${AWS::StackName}ModuleRestApiPolicy"
+            }
+          }
+        ]
+      }
+    },
+    "ModuleRestApiAccount": {
+      "Type": "AWS::ApiGateway::Account",
+      "Properties": {
+        "CloudWatchRoleArn": {
+          "Fn::GetAtt": [
+            "ModuleRestApiRole",
+            "Arn"
+          ]
+        }
+      }
+    },
+    "ModuleRestApiDeployment4122294C8E60F8A5FE2A23671103D51A": {
+      "Type": "AWS::ApiGateway::Deployment",
+      "Properties": {
+        "Description": {
+          "Fn::Sub": "${AWS::StackName} API [4122294C8E60F8A5FE2A23671103D51A]"
+        },
+        "RestApiId": {
+          "Ref": "ModuleRestApi"
+        }
+      },
+      "DependsOn": [
+        "ModuleRestApiSlackResourcePOST"
+      ]
+    },
+    "ModuleRestApiStage": {
+      "Type": "AWS::ApiGateway::Stage",
+      "Properties": {
+        "DeploymentId": {
+          "Ref": "ModuleRestApiDeployment4122294C8E60F8A5FE2A23671103D51A"
+        },
+        "MethodSettings": [
+          {
+            "DataTraceEnabled": true,
+            "HttpMethod": "*",
+            "LoggingLevel": "INFO",
+            "ResourcePath": "/*"
+          }
+        ],
+        "RestApiId": {
+          "Ref": "ModuleRestApi"
+        },
+        "StageName": "LATEST"
+      },
+      "DependsOn": [
+        "ModuleRestApiAccount"
+      ]
+    }
+  },
+  "Outputs": {
+    "Module": {
+      "Value": "LambdaSharp.Sample.SlackCommand:1.0-DEV"
+    }
+  },
+  "Conditions": {
+    "SecretsIsEmpty": {
+      "Fn::Equals": [
+        {
+          "Ref": "Secrets"
+        },
+        ""
+      ]
+    },
+    "LambdaSharpDeadLetterQueueIsImported": {
+      "Fn::And": [
+        {
+          "Fn::Not": [
+            {
+              "Fn::Equals": [
+                {
+                  "Ref": "LambdaSharpDeadLetterQueue"
+                },
+                ""
+              ]
+            }
+          ]
+        },
+        {
+          "Fn::Equals": [
+            {
+              "Fn::Select": [
+                "0",
+                {
+                  "Fn::Split": [
+                    "$",
+                    {
+                      "Ref": "LambdaSharpDeadLetterQueue"
+                    }
+                  ]
+                }
+              ]
+            },
+            ""
+          ]
+        }
+      ]
+    },
+    "LambdaSharpLoggingStreamIsImported": {
+      "Fn::And": [
+        {
+          "Fn::Not": [
+            {
+              "Fn::Equals": [
+                {
+                  "Ref": "LambdaSharpLoggingStream"
+                },
+                ""
+              ]
+            }
+          ]
+        },
+        {
+          "Fn::Equals": [
+            {
+              "Fn::Select": [
+                "0",
+                {
+                  "Fn::Split": [
+                    "$",
+                    {
+                      "Ref": "LambdaSharpLoggingStream"
+                    }
+                  ]
+                }
+              ]
+            },
+            ""
+          ]
+        }
+      ]
+    },
+    "LambdaSharpLoggingStreamRoleIsImported": {
+      "Fn::And": [
+        {
+          "Fn::Not": [
+            {
+              "Fn::Equals": [
+                {
+                  "Ref": "LambdaSharpLoggingStreamRole"
+                },
+                ""
+              ]
+            }
+          ]
+        },
+        {
+          "Fn::Equals": [
+            {
+              "Fn::Select": [
+                "0",
+                {
+                  "Fn::Split": [
+                    "$",
+                    {
+                      "Ref": "LambdaSharpLoggingStreamRole"
+                    }
+                  ]
+                }
+              ]
+            },
+            ""
+          ]
+        }
+      ]
+    },
+    "LambdaSharpDefaultSecretKeyIsImported": {
+      "Fn::And": [
+        {
+          "Fn::Not": [
+            {
+              "Fn::Equals": [
+                {
+                  "Ref": "LambdaSharpDefaultSecretKey"
+                },
+                ""
+              ]
+            }
+          ]
+        },
+        {
+          "Fn::Equals": [
+            {
+              "Fn::Select": [
+                "0",
+                {
+                  "Fn::Split": [
+                    "$",
+                    {
+                      "Ref": "LambdaSharpDefaultSecretKey"
+                    }
+                  ]
+                }
+              ]
+            },
+            ""
+          ]
+        }
+      ]
+    }
+  },
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterLabels": {
+        "SlackToken": {
+          "default": "Slack verification token [String]"
+        },
+        "Secrets": {
+          "default": "Comma-separated list of optional secret keys [String]"
+        },
+        "LambdaSharpDeadLetterQueue": {
+          "default": "Dead Letter Queue (ARN) [String]"
+        },
+        "LambdaSharpLoggingStream": {
+          "default": "Logging Stream (ARN) [String]"
+        },
+        "LambdaSharpLoggingStreamRole": {
+          "default": "Logging Stream Role (ARN) [String]"
+        },
+        "LambdaSharpDefaultSecretKey": {
+          "default": "Secret Key (ARN) [String]"
+        },
+        "DeploymentBucketName": {
+          "default": "Deployment S3 bucket name [String]"
+        },
+        "DeploymentPrefix": {
+          "default": "Deployment tier prefix [String]"
+        },
+        "DeploymentPrefixLowercase": {
+          "default": "Deployment tier prefix (lowercase) [String]"
+        },
+        "DeploymentParent": {
+          "default": "Parent stack name for nested deployments, blank otherwise [String]"
+        },
+        "DeploymentChecksum": {
+          "default": "CloudFormation template MD5 checksum [String]"
+        }
+      },
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "Module Settings"
+          },
+          "Parameters": [
+            "SlackToken"
+          ]
+        },
+        {
+          "Label": {
+            "default": "LambdaSharp Module Options"
+          },
+          "Parameters": [
+            "Secrets"
+          ]
+        },
+        {
+          "Label": {
+            "default": "LambdaSharp Core Imports"
+          },
+          "Parameters": [
+            "LambdaSharpDeadLetterQueue",
+            "LambdaSharpLoggingStream",
+            "LambdaSharpLoggingStreamRole",
+            "LambdaSharpDefaultSecretKey"
+          ]
+        },
+        {
+          "Label": {
+            "default": "LambdaSharp Deployment Settings (DO NOT MODIFY)"
+          },
+          "Parameters": [
+            "DeploymentBucketName",
+            "DeploymentPrefix",
+            "DeploymentPrefixLowercase",
+            "DeploymentParent",
+            "DeploymentChecksum"
+          ]
+        }
+      ]
+    },
+    "LambdaSharp::Manifest": {
+      "Version": "2018-12-31",
+      "Module": "LambdaSharp.Sample.SlackCommand:1.0-DEV",
+      "ParameterSections": [
+        {
+          "Title": "Module Settings",
+          "Parameters": [
+            {
+              "Name": "SlackToken",
+              "Type": "String",
+              "Default": ""
+            }
+          ]
+        },
+        {
+          "Title": "LambdaSharp Module Options",
+          "Parameters": [
+            {
+              "Name": "Secrets",
+              "Type": "String",
+              "Label": "Comma-separated list of optional secret keys",
+              "Default": ""
+            }
+          ]
+        },
+        {
+          "Title": "LambdaSharp Core Imports",
+          "Parameters": [
+            {
+              "Name": "DeadLetterQueue",
+              "Type": "String",
+              "Label": "Dead Letter Queue (ARN)",
+              "Default": "$LambdaSharp-Core::DeadLetterQueue"
+            },
+            {
+              "Name": "LoggingStream",
+              "Type": "String",
+              "Label": "Logging Stream (ARN)",
+              "Default": "$LambdaSharp-Core::LoggingStream"
+            },
+            {
+              "Name": "LoggingStreamRole",
+              "Type": "String",
+              "Label": "Logging Stream Role (ARN)",
+              "Default": "$LambdaSharp-Core::LoggingStreamRole"
+            },
+            {
+              "Name": "DefaultSecretKey",
+              "Type": "String",
+              "Label": "Secret Key (ARN)",
+              "Default": "$LambdaSharp-Core::DefaultSecretKey"
+            }
+          ]
+        }
+      ],
+      "RuntimeCheck": true,
+      "Hash": "3974982913F7704E5DFF0ABC1BCF0086",
+      "Git": {
+        "Branch": "test-branch",
+        "SHA": "0123456789ABCDEF0123456789ABCDEF01234567"
+      },
+      "Dependencies": [
+        {
+          "ModuleFullName": "LambdaSharp.Core",
+          "MinVersion": "0.5-RC1"
+        }
+      ],
+      "ResourceNameMappings": {
+        "MyFunctionLogGroup": "MyFunction::LogGroup",
+        "ModuleRole": "Module::Role",
+        "ModuleRegistration": "Module::Registration",
+        "MyFunctionRegistration": "MyFunction::Registration",
+        "MyFunctionLogGroupSubscription": "MyFunction::LogGroupSubscription",
+        "ModuleRestApi": "Module::RestApi",
+        "ModuleRestApiSlackResource": "Module::RestApi::SlackResource",
+        "ModuleRestApiSlackResourcePOST": "Module::RestApi::SlackResource::POST",
+        "ModuleRestApiSlackResourcePOSTPermission": "Module::RestApi::SlackResource::POST::Permission",
+        "ModuleRestApiRole": "Module::RestApi::Role",
+        "ModuleRestApiAccount": "Module::RestApi::Account",
+        "ModuleRestApiDeployment4122294C8E60F8A5FE2A23671103D51A": "Module::RestApi::Deployment4122294C8E60F8A5FE2A23671103D51A",
+        "ModuleRestApiStage": "Module::RestApi::Stage"
+      },
+      "TypeNameMappings": {
+        "Custom::LambdaSharpRegistrationModule": "LambdaSharp::Registration::Module",
+        "Custom::LambdaSharpRegistrationFunction": "LambdaSharp::Registration::Function"
+      }
+    }
+  }
+}
